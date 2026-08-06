@@ -4,7 +4,7 @@ from ca_chromosome import CAChromosome
 from tqdm import trange
 import numpy as np 
 import os
-import uuid
+import secrets
 
 class GeneticAlgorithm:
     def __init__(self, config):
@@ -52,7 +52,7 @@ class GeneticAlgorithm:
         self.population = sorted(self.population, key=lambda x: x.fitness_value, reverse=True)
 
     def run(self):
-        unique_id = str(uuid.uuid4())
+        unique_id = secrets.token_hex(6)
         progress = trange(self.config['evolution']['generations'])
         best_chromosome = None
         self.save_to_folder(os.path.join(self.config['evolution']['save_folder'] + "_" + unique_id, f"generation_0"))

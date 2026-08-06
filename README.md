@@ -6,6 +6,8 @@ The run take a config file to run stuff. The config file has 3 different things 
 - having context for the llm to evolve like each mutation have the whole chromosome and fitness value as part of the prompt to help with diversity and having context (`code_context` can be True or False)
 
 ## To run
+You need ANTHROPIC API KEY before running
+
 ```python
 uv run run.py -c configurations/binary.yaml
 ```
