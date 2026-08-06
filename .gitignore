@@ -1,6 +1,7 @@
-# Tool folders
+# Tool and results folders
 .claude/
 .vscode/
+results/
 uv.lock
 .python-version
 
