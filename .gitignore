@@ -1,6 +1,8 @@
 # Tool folders
 .claude/
 .vscode/
+uv.lock
+.python-version
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
