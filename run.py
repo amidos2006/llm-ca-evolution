@@ -1,4 +1,5 @@
 from genetic_algorithm import GeneticAlgorithm
+from dotenv import load_dotenv
 import yaml
 import os
 import argparse
@@ -13,6 +14,7 @@ def short_id():
     return base64.urlsafe_b64encode(u.bytes).decode('utf-8').rstrip('=\n')
 
 if __name__ == "__main__":
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Run CA Evolution")
     parser.add_argument("-c", "--config", type=str, help="Path to the configuration YAML file")
     args = parser.parse_args()
