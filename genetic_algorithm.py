@@ -68,3 +68,5 @@ class GeneticAlgorithm:
             os.makedirs(folder_path)
         for index, chromosome in enumerate(self.population):
             chromosome.save_to_file(os.path.join(folder_path, f"chromosome_{index}.json"))
+        if self.config['evolution']['save_images']:
+            self.population[0].save_image(self.env, os.path.join(folder_path, "chromosome_0.png"))

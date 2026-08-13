@@ -17,15 +17,16 @@ evolution:
   mutation_rate: 0.1
   fitness_runs: 30
   seed: 42
-  generations: 100
+  generations: 50
   tournament: 3
   save_folder: "results/binary"
+  save_images: True
 
 ca:
   steps: 10
-  local_functions: 2
+  local_functions: 8
   size: 3
-  global_functions: 1
+  global_functions: 4
 
 llm:
   system_prompt: prompts/system_prompt.md

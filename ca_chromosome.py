@@ -41,9 +41,6 @@ class CAChromosome:
 
         with open(f"{self.config['llm']['user_execute_prompt']}", "r") as f:
             self.user_execute_prompt = f.read()
-            self.user_execute_prompt = self.user_execute_prompt.replace("#local_functions#", str(self.config['ca']['local_functions']))
-            self.user_execute_prompt = self.user_execute_prompt.replace("#total_functions#", str(self.config['ca']['global_functions'] + self.config['ca']['local_functions']))
-            self.user_execute_prompt = self.user_execute_prompt.replace("#values#", str(self.config['environment']['values']))
 
         with open(f"{self.config['llm']['user_function_prompt']}", "r") as f:
             self.user_function_prompt = f.read()
@@ -68,6 +65,30 @@ class CAChromosome:
         else:
             self.execute_string = self.get_execute_function(True)
 
+    def _fitness_meaning(self, value):
+        if value <= -100:
+            return "compile failed"
+        if value < 0:
+            return "runtime errors on some evaluation runs; more negative means more failures"
+        if value < 1:
+            return "level constraints are not fully satisfied; higher is better quality"
+        return "constraints are satisfied; extra score is diversity across generated levels"
+
+    def _task_instruction(self, initialization, kind):
+        target = "this function" if kind == "function" else "execute"
+        if initialization:
+            if kind == "function":
+                return "Write this feature detector from scratch. Compute something that could help execute decide the next tile (counts, flags, or structure)."
+            return "Write execute from scratch so it can emit every needed tile type using the helper results above."
+        if not self.config['llm']['code_context']:
+            return f"Write a new {target} from scratch. Keep the required name and signature."
+        return (
+            f"Rewrite ONLY {target}. Keep the name and signature. "
+            "Produce a different implementation, not a paraphrase. "
+            "If fitness is below 1, prioritize satisfying the level constraints. "
+            "If fitness is 1 or higher, increase diversity without breaking solvability."
+        )
+
     def get_context(self, initialization, current_function):
         replacements = {
             "#code_context#": "",
@@ -76,13 +97,15 @@ class CAChromosome:
         }
 
         if self.config['llm']['code_context'] and not initialization:
-            replacements["#code_context#"] = "\n\nThe current cellular automata code is as follows:\n\n" + str(self)
-            replacements["#current_code#"] = "\n\nThe current function that need to be modified is:\n\n" + current_function
+            replacements["#code_context#"] = "\n\nCURRENT PROGRAM:\n" + str(self)
+            replacements["#current_code#"] = "\n\nFUNCTION TO EDIT:\n" + current_function
             if self.fitness_value is not None:
-                replacements["#current_fitness#"] = f"\n\nThe current fitness value of that cellular automata is {self.fitness_value}"
-        
-        return replacements
+                replacements["#current_fitness#"] = (
+                    f"\n\nFITNESS: {self.fitness_value}\n"
+                    f"Meaning: {self._fitness_meaning(self.fitness_value)}"
+                )
 
+        return replacements
 
     def get_local_function(self, index, initialization):
         replacements = {
@@ -90,7 +113,8 @@ class CAChromosome:
             "#function_type#": "local",
             "#width#": str(self.config['ca']['size']),
             "#height#": str(self.config['ca']['size']),
-            "#function_representation#": "the local observation around each cell location",
+            "#function_representation#": "the binary neighborhood around one cell for a single tile type",
+            "#task_instruction#": self._task_instruction(initialization, "function"),
         }
         context_replacements = self.get_context(initialization, self.local_string[index] if index < len(self.local_string) else "")
         return run_claude_code(self.client, self.config, self.system_prompt, self.user_function_prompt, {**replacements, **context_replacements})
@@ -101,15 +125,24 @@ class CAChromosome:
             "#function_type#": "global",
             "#width#": str(self.config['environment']['width']),
             "#height#": str(self.config['environment']['height']),
+            "#function_representation#": "a binary mask of one tile type over the whole map",
+            "#task_instruction#": self._task_instruction(initialization, "function"),
         }
         context_replacements = self.get_context(initialization, self.global_string[index] if index < len(self.global_string) else "")
         return run_claude_code(self.client, self.config, self.system_prompt, self.user_function_prompt, {**replacements, **context_replacements})
 
     def get_execute_function(self, initialization):
+        n_local = self.config['ca']['local_functions']
+        n_global = self.config['ca']['global_functions']
         replacements = {
-            "#global_functions#": "\n\n".join(self.global_string),
-            "#local_functions#": "\n\n".join(self.local_string),
-            "#parameter_names#": ", ".join([f"local_{i}" for i in range(self.config['ca']['local_functions'])] + [f"global_{i}" for i in range(self.config['ca']['global_functions'])]),
+            "#parameter_names#": ", ".join([f"local_{i}" for i in range(n_local)] + [f"global_{i}" for i in range(n_global)]),
+            "#total_functions#": str(n_local + n_global),
+            "#n_local#": str(n_local),
+            "#n_global#": str(n_global),
+            "#values#": str(self.config['environment']['values']),
+            "#local_function_code#": "\n\n".join(self.local_string) if self.local_string else "(none)",
+            "#global_function_code#": "\n\n".join(self.global_string) if self.global_string else "(none)",
+            "#task_instruction#": self._task_instruction(initialization, "execute"),
         }
         context_replacements = self.get_context(initialization, self.execute_string if self.execute_string else "")
         return run_claude_code(self.client, self.config, self.system_prompt, self.user_execute_prompt, {**replacements, **context_replacements})
@@ -252,6 +285,14 @@ class CAChromosome:
                 "execute_function": self.execute_string,
                 "fitness": self.fitness_value,
             }, f)
+
+    def save_image(self, env, filename):
+        errors, level, _ = self.execute(env)
+        if errors == 0.0 and level is not None:
+            try:
+                env.render(level).save(filename)
+            except:
+                pass
 
     def load_from_file(self, filename):
         with open(filename, 'r') as f:

@@ -20,6 +20,7 @@ evolution:
   generations: 100
   tournament: 3
   save_folder: "results/zelda"
+  save_images: True
 
 ca:
   steps: 10
