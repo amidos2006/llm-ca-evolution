@@ -1,24 +1,33 @@
 import numpy as np
 import json
+import parallel
+import pcg_benchmark
+import time
 
 def run_claude_code(client, config, system_prompt, user_prompt, replacements):
     user_prompt = "" + user_prompt
     for key, value in replacements.items():
         user_prompt = user_prompt.replace(key, value)
     got_response = False
+    attempt = 0
     while not got_response:
         try:
-            response = client.messages.create(
-                model=config['llm']['model'],
-                max_tokens=config['llm']['max_tokens'],
-                system=system_prompt,
-                messages=[
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
+            # The slot keeps the whole process under the configured concurrency cap.
+            with parallel.api_slot():
+                response = client.messages.create(
+                    model=config['llm']['model'],
+                    max_tokens=config['llm']['max_tokens'],
+                    system=system_prompt,
+                    messages=[
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
             got_response = True
         except Exception as e:
-            print(f"Error in Claude API call: {e}. Retrying...")
+            attempt += 1
+            delay = parallel.backoff_delay(attempt)
+            print(f"Error in Claude API call: {e}. Retrying in {delay:.1f}s...")
+            time.sleep(delay)
     return response.content[0].text
 
 class CAChromosome:
@@ -26,6 +35,7 @@ class CAChromosome:
         self.client = client
         self.config = config
         self.fitness_value = None
+        self.compiled = False
 
         with open(f"{self.config['llm']['system_prompt']}", "r") as f:
             self.system_prompt = f.read()
@@ -45,19 +55,25 @@ class CAChromosome:
         with open(f"{self.config['llm']['user_function_prompt']}", "r") as f:
             self.user_function_prompt = f.read()
 
+        # The functions do not depend on each other, so ask for them all at once.
+        # The empty list has to exist first because get_context reads it.
         if local_functions:
             self.local_string = list(local_functions)
         else:
             self.local_string = []
-            for i in range(self.config['ca']['local_functions']):
-                self.local_string.append(self.get_local_function(i, True))
+            self.local_string = parallel.run_parallel(
+                lambda index: self.get_local_function(index, True),
+                range(self.config['ca']['local_functions']),
+            )
 
         if global_functions:
             self.global_string = list(global_functions)
         else:
             self.global_string = []
-            for i in range(self.config['ca']['global_functions']):
-                self.global_string.append(self.get_global_function(i, True))
+            self.global_string = parallel.run_parallel(
+                lambda index: self.get_global_function(index, True),
+                range(self.config['ca']['global_functions']),
+            )
 
         self.execute_string = None
         if execution_function:
@@ -179,6 +195,7 @@ class CAChromosome:
             total_errors += 1.0
         self.execute_function = self.namespace.get('execute', None)
 
+        self.compiled = True
         return total_errors / (1.0 * max_errors)
 
     def execute(self, env):
@@ -253,29 +270,40 @@ class CAChromosome:
                         self.fitness_value = (q + np.mean(details['quality'])) / 2
         return self.fitness_value
 
-    def mutate(self):
+    def mutate(self, rng):
         child = CAChromosome(self.client, self.config, self.local_string, self.global_string, self.execute_string)
-        for i in range(self.config['ca']['local_functions']):
-            if np.random.rand() < self.config['evolution']['mutation_rate']:
-                child.local_string[i] = self.get_local_function(i, False)
-        for i in range(self.config['ca']['global_functions']):
-            if np.random.rand() < self.config['evolution']['mutation_rate']:
-                child.global_string[i] = self.get_global_function(i, False)
-        if np.random.rand() < self.config['evolution']['mutation_rate']:
+        # Draw every decision first, then rewrite the picked functions in parallel.
+        local_indices = [i for i in range(self.config['ca']['local_functions'])
+                         if rng.rand() < self.config['evolution']['mutation_rate']]
+        global_indices = [i for i in range(self.config['ca']['global_functions'])
+                          if rng.rand() < self.config['evolution']['mutation_rate']]
+        mutate_execute = rng.rand() < self.config['evolution']['mutation_rate']
+
+        local_code = parallel.run_parallel(lambda index: self.get_local_function(index, False), local_indices)
+        for index, code in zip(local_indices, local_code):
+            child.local_string[index] = code
+        global_code = parallel.run_parallel(lambda index: self.get_global_function(index, False), global_indices)
+        for index, code in zip(global_indices, global_code):
+            child.global_string[index] = code
+        if mutate_execute:
             child.execute_string = self.get_execute_function(False)
         return child
 
-    def crossover(self, other):
+    def crossover(self, other, rng):
         child = CAChromosome(self.client, self.config, self.local_string, self.global_string, self.execute_string)
         for i in range(self.config['ca']['local_functions']):
-            if np.random.rand() < self.config['evolution']['crossover_rate']:
+            if rng.rand() < self.config['evolution']['crossover_rate']:
                 child.local_string[i] = other.local_string[i]
         for i in range(self.config['ca']['global_functions']):
-            if np.random.rand() < self.config['evolution']['crossover_rate']:
+            if rng.rand() < self.config['evolution']['crossover_rate']:
                 child.global_string[i] = other.global_string[i]
-        if np.random.rand() < self.config['evolution']['crossover_rate']:
+        if rng.rand() < self.config['evolution']['crossover_rate']:
             child.execute_string = other.execute_string
         return child
+
+    def payload(self):
+        # Everything a worker process needs to score this chromosome, all of it picklable.
+        return (self.config, self.local_string, self.global_string, self.execute_string)
 
     def save_to_file(self, filename):
         with open(filename, 'w') as f:
@@ -287,6 +315,9 @@ class CAChromosome:
             }, f)
 
     def save_image(self, env, filename):
+        # Fitness may have run in a worker, so the code is not always compiled here.
+        if not self.compiled:
+            self.compile()
         errors, level, _ = self.execute(env)
         if errors == 0.0 and level is not None:
             try:
@@ -311,3 +342,18 @@ class CAChromosome:
         if self.execute_string:
             string_values += "\n\n" + self.execute_string
         return string_values
+
+_worker_envs = {}
+
+def worker_env(config):
+    # One environment per process, built on first use because it cannot be pickled.
+    name = config['environment']['name']
+    if name not in _worker_envs:
+        _worker_envs[name] = pcg_benchmark.make(name)
+    return _worker_envs[name]
+
+def evaluate_chromosome(payload):
+    # Entry point for a worker process: rebuild the chromosome from code and return its fitness.
+    config, local_string, global_string, execute_string = payload
+    chromosome = CAChromosome(None, config, local_string, global_string, execute_string)
+    return chromosome.fitness(worker_env(config))

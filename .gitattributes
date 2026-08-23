@@ -1,0 +1,2 @@
+# The sweep launcher runs under bash, so it must stay LF even when edited on Windows.
+*.sh text eol=lf

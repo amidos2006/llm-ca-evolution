@@ -16,10 +16,12 @@ evolution:
   crossover_rate: 0.5
   mutation_rate: 0.1
   fitness_runs: 30
+  fitness_workers: 4
   seed: 42
   generations: 100
   tournament: 3
   save_folder: "results/zelda"
+  save_every: 10
   save_images: True
 
 ca:
@@ -34,4 +36,5 @@ llm:
   user_execute_prompt: prompts/user_execute_prompt.md
   code_context: False
   max_tokens: 1024
+  max_concurrency: 6
   model: "claude-opus-4-8"
