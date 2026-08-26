@@ -8,22 +8,22 @@ The run take a config file to run stuff. The config file has 3 different things 
 ## To run
 You need ANTHROPIC API KEY before running
 
-```python
-uv run run.py -c configurations/binary.yaml
+```bash
+uv run scripts/run.py -c configurations/binary.yaml
 ```
 
 ## To sweep
-`sweep.yaml` holds the grid (values per key, plus the seeds). Check the size first, then run one slice or all of it.
+`scripts/sweep.yaml` holds the grid (values per key, plus the seeds). Check the size first, then run one slice or all of it.
 
 ```bash
-uv run sweep.py --sweep-file sweep.yaml --count
-uv run sweep.py --sweep-file sweep.yaml --shard 1/4
+uv run scripts/sweep.py --sweep-file scripts/sweep.yaml --count
+uv run scripts/sweep.py --sweep-file scripts/sweep.yaml --shard 1/4
 ```
 
-`run_sweep_tmux.sh` splits the grid into shards and gives each one a tmux window, so the shards run side by side.
+`scripts/run_sweep_tmux.sh` splits the grid into shards and gives each one a tmux window, so the shards run side by side.
 
 ```bash
-./run_sweep_tmux.sh -n 4 -a
+./scripts/run_sweep_tmux.sh -n 4 -a
 ```
 
 Inside a run, the API calls of a generation go out in parallel and the fitness of a generation is scored in worker processes. Three config keys control the load, and all of them are per shard, so 8 shards use 8 times what they say.

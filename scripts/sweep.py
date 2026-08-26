@@ -3,12 +3,17 @@ from pathlib import Path
 import argparse
 import copy
 import itertools
+import sys
 import yaml
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from utils import usage
 
 DEFAULT_ENTITY = "munasir"
 DEFAULT_PROJECT = "llm-ca-evolution"
-CONFIG_DIR = Path("configurations")
+CONFIG_DIR = PROJECT_ROOT / "configurations"
 
 
 def flatten_keys(data, prefix=""):
@@ -114,6 +119,8 @@ def discover_configs(paths=None):
         resolved = []
         for raw in paths:
             path = Path(raw)
+            if not path.is_absolute():
+                path = PROJECT_ROOT / path
             if path.is_dir():
                 resolved.extend(sorted(path.glob("*.yaml")))
             else:
@@ -202,13 +209,14 @@ def log_generation(generation, ga):
     import wandb
 
     metrics = ga.fitness_stats()
+    metrics.update(ga.usage_stats())
     metrics["generation"] = generation
     wandb.log(metrics, step=generation)
 
 
 def run_job(job, entity, project):
     import wandb
-    from genetic_algorithm import GeneticAlgorithm
+    from evolution.genetic_algorithm import GeneticAlgorithm
 
     base_config = load_yaml(job["config_path"])
     config = apply_job(base_config, job)
@@ -227,13 +235,17 @@ def run_job(job, entity, project):
         config=wandb_config,
         reinit=True,
     )
+    # A shard runs its jobs back to back in one process, so clear the tally between them.
+    usage.reset()
     try:
         ga = GeneticAlgorithm(config)
         best = ga.run(on_generation=log_generation)
         wandb.summary["best_fitness"] = None if best is None else best.fitness_value
+        wandb.summary.update(usage.as_metrics(usage.totals(), "tokens/total"))
         return best
     except Exception:
         wandb.summary["failed"] = True
+        wandb.summary.update(usage.as_metrics(usage.totals(), "tokens/total"))
         raise
     finally:
         run.finish()
@@ -244,12 +256,12 @@ def build_parser():
         description="Sweep CA evolution configs. You choose the keys, values, and seeds.",
         epilog=(
             "Examples:\n"
-            "  uv run sweep.py --seeds 42,7\n"
-            "  uv run sweep.py --seeds 1,2,3 --sweep ca.local_functions=1,4,8 --sweep llm.code_context=true,false\n"
-            "  uv run sweep.py --configs configurations/binary.yaml --seeds 42 --sweep ca.global_functions=0,4\n"
-            "  uv run sweep.py --sweep-file my_sweep.yaml\n"
-            "  uv run sweep.py --sweep-file my_sweep.yaml --shard 2/4\n"
-            "  uv run sweep.py --list-keys"
+            "  uv run scripts/sweep.py --seeds 42,7\n"
+            "  uv run scripts/sweep.py --seeds 1,2,3 --sweep ca.local_functions=1,4,8 --sweep llm.code_context=true,false\n"
+            "  uv run scripts/sweep.py --configs configurations/binary.yaml --seeds 42 --sweep ca.global_functions=0,4\n"
+            "  uv run scripts/sweep.py --sweep-file scripts/my_sweep.yaml\n"
+            "  uv run scripts/sweep.py --sweep-file scripts/my_sweep.yaml --shard 2/4\n"
+            "  uv run scripts/sweep.py --list-keys"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -282,7 +294,7 @@ def build_parser():
 
 
 if __name__ == "__main__":
-    load_dotenv()
+    load_dotenv(PROJECT_ROOT / ".env")
     args = build_parser().parse_args()
 
     file_sweep, file_seeds, file_configs, file_entity, file_project = {}, None, None, None, None

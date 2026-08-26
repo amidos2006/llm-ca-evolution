@@ -3,21 +3,23 @@
 # the jobs are dealt round-robin across shards, and each shard gets its own window.
 set -euo pipefail
 
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT"
 
 SESSION="ca-sweep"
-SWEEP_FILE="sweep.yaml"
+SWEEP_FILE="scripts/sweep.yaml"
 # 8 shards times fitness_workers 4 oversubscribes 24 vCPUs on purpose: a shard leaves its
 # cores idle while it waits on Claude, so the extra workers fill those gaps.
-SHARDS=8
+SHARDS=16
 LOG_DIR="logs"
 ATTACH=0
 
 usage() {
     cat <<'EOF'
-Usage: ./run_sweep_tmux.sh [options]
+Usage: ./scripts/run_sweep_tmux.sh [options]
   -s NAME   tmux session name (default: ca-sweep)
-  -f FILE   sweep YAML passed to sweep.py (default: sweep.yaml)
+  -f FILE   sweep YAML passed to sweep.py (default: scripts/sweep.yaml)
   -n COUNT  shards, one tmux window each (default: 8)
   -l DIR    log directory (default: logs)
   -a        attach to the session once the windows are up
@@ -45,7 +47,7 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
 fi
 
 # Never open more windows than there are jobs.
-JOBS=$(uv run sweep.py --sweep-file "$SWEEP_FILE" --count)
+JOBS=$(uv run scripts/sweep.py --sweep-file "$SWEEP_FILE" --count)
 if [ "$JOBS" -lt 1 ]; then
     echo "The grid is empty"
     exit 1
@@ -55,22 +57,32 @@ if [ "$SHARDS" -gt "$JOBS" ]; then
 fi
 
 mkdir -p "$LOG_DIR"
-tmux new-session -d -s "$SESSION" -n "shard-1"
+LOG_DIR="$(cd "$LOG_DIR" && pwd)"
+tmux new-session -d -s "$SESSION" -n "shard-1" -c "$ROOT"
 # Keep dead panes around so a crashed shard still shows its traceback.
 tmux set-option -t "$SESSION" remain-on-exit on
 
 for index in $(seq 1 "$SHARDS"); do
     if [ "$index" -gt 1 ]; then
-        tmux new-window -t "$SESSION" -n "shard-$index"
+        tmux new-window -t "$SESSION" -n "shard-$index" -c "$ROOT"
     fi
-    command="uv run sweep.py --sweep-file '$SWEEP_FILE' --shard $index/$SHARDS 2>&1 | tee '$LOG_DIR/shard_$index.log'"
+    # The interactive rc file cds every new pane away to $WORKSPACE, so the shard has to
+    # walk itself back before the relative paths mean anything.
+    command="cd '$ROOT' && uv run scripts/sweep.py --sweep-file '$SWEEP_FILE' --shard $index/$SHARDS 2>&1 | tee '$LOG_DIR/shard_$index.log'"
     tmux send-keys -t "$SESSION:shard-$index" "$command" C-m
 done
 
 echo "$JOBS job(s) split across $SHARDS shard(s) in session $SESSION"
 echo "Logs: $LOG_DIR/shard_*.log"
 if [ "$ATTACH" -eq 1 ]; then
-    tmux attach -t "$SESSION"
+    # tmux refuses a plain attach from inside a session, so hop the existing client over.
+    if [ -n "${TMUX:-}" ]; then
+        tmux switch-client -t "$SESSION"
+    else
+        tmux attach -t "$SESSION"
+    fi
+elif [ -n "${TMUX:-}" ]; then
+    echo "Attach with: tmux switch-client -t $SESSION  (you are already inside tmux)"
 else
     echo "Attach with: tmux attach -t $SESSION"
 fi

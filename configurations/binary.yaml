@@ -35,6 +35,10 @@ llm:
   user_function_prompt: prompts/user_function_prompt.md
   user_execute_prompt: prompts/user_execute_prompt.md
   code_context: True
-  max_tokens: 1024
+  # Shared with extended thinking, which alone takes ~2.6-3.9k on the execute prompt.
+  max_tokens: 8000
+  # Thinking depth: low, medium, high, xhigh, max. The default sits near high; max
+  # can spend the whole budget on thinking and return no answer.
+  effort: medium
   max_concurrency: 6
-  model: "claude-opus-4-8"
+  model: "claude-sonnet-5"

@@ -1,11 +1,12 @@
 import anthropic
 import pcg_benchmark
-from ca_chromosome import CAChromosome, evaluate_chromosome
+from .ca_chromosome import CAChromosome, evaluate_chromosome
+from . import parallel
+from datetime import datetime
 from tqdm import trange
 import numpy as np 
 import os
-import parallel
-import secrets
+from utils import usage
 
 SEED_LIMIT = 2 ** 31 - 1
 
@@ -28,6 +29,10 @@ class GeneticAlgorithm:
         self.claude_client = anthropic.Client()
         self.env = pcg_benchmark.make(self.config['environment']['name'])
 
+        # Generation 0 is the initial population, so start the tally before building it.
+        self._usage_mark = usage.totals()
+        self.generation_usage = dict.fromkeys(usage.FIELDS, 0)
+
         # Every chromosome is an independent batch of API calls.
         self.population = parallel.run_parallel(
             lambda _: CAChromosome(self.claude_client, self.config),
@@ -35,6 +40,7 @@ class GeneticAlgorithm:
         )
         self.evaluate_population()
         self.population = sorted(self.population, key=lambda x: x.fitness_value, reverse=True)
+        self.mark_usage()
 
     def evaluate_population(self):
         # Scoring a chromosome is pure CPU work, so hand the unscored ones to worker processes.
@@ -73,6 +79,19 @@ class GeneticAlgorithm:
         self.evaluate_population()
         self.population = sorted(self.population, key=lambda x: x.fitness_value, reverse=True)
 
+    def mark_usage(self):
+        # Close off the current generation's slice of the tally and start the next one.
+        self.generation_usage = usage.delta(self._usage_mark)
+        self._usage_mark = usage.totals()
+        return self.generation_usage
+
+    def usage_stats(self):
+        # Per-generation cost plus the running total, ready for wandb.
+        return {
+            **usage.as_metrics(self.generation_usage, "tokens/generation"),
+            **usage.as_metrics(usage.totals(), "tokens/total"),
+        }
+
     def fitness_stats(self):
         values = np.array([chromosome.fitness_value for chromosome in self.population], dtype=float)
         return {
@@ -88,21 +107,42 @@ class GeneticAlgorithm:
         save_every = max(1, int(self.config['evolution'].get('save_every', 1)))
         return generation % save_every == 0 or generation == self.config['evolution']['generations']
 
+    def run_directory(self):
+        # results/binary -> results/binary_20260826-102700_lf-50_gf-1_steps-25_cc-true
+        save_folder = self.config['evolution']['save_folder']
+        parent = os.path.dirname(save_folder) or "."
+        env_name = str(self.config['environment']['name'])
+        game = env_name.rsplit("-", 1)[0] if "-" in env_name else env_name
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        lf = self.config['ca']['local_functions']
+        gf = self.config['ca']['global_functions']
+        steps = self.config['ca']['steps']
+        cc = str(self.config['llm']['code_context']).lower()
+        name = f"{game}_{timestamp}_lf-{lf}_gf-{gf}_steps-{steps}_cc-{cc}"
+        return os.path.join(parent, name)
+
     def run(self, on_generation=None):
-        unique_id = secrets.token_hex(6)
+        run_dir = self.run_directory()
         progress = trange(self.config['evolution']['generations'])
         best_chromosome = None
-        self.save_to_folder(os.path.join(self.config['evolution']['save_folder'] + "_" + unique_id, f"generation_0"))
+        self.save_to_folder(os.path.join(run_dir, "generation_0"))
+        progress.write(f"Generation 0 tokens: {usage.describe(self.generation_usage)}")
         if on_generation is not None:
             on_generation(0, self)
         for generation in progress:
             self.step()
+            self.mark_usage()
             if self.should_save(generation + 1):
-                self.save_to_folder(os.path.join(self.config['evolution']['save_folder'] + "_" + unique_id, f"generation_{generation+1}"))
+                self.save_to_folder(os.path.join(run_dir, f"generation_{generation+1}"))
             best_chromosome = self.best()
             progress.set_description(f"Best fitness: {best_chromosome.fitness_value:.4f}")
+            # write, not print, so the line does not tear the progress bar.
+            progress.write(
+                f"Generation {generation + 1} tokens: {usage.describe(self.generation_usage)}"
+            )
             if on_generation is not None:
                 on_generation(generation + 1, self)
+        progress.write(f"Run total tokens: {usage.describe(usage.totals())}")
         return best_chromosome
 
     def save_to_folder(self, folder_path):

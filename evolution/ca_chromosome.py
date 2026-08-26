@@ -1,8 +1,9 @@
 import numpy as np
 import json
-import parallel
+from . import parallel
 import pcg_benchmark
 import time
+from utils import usage
 
 def run_claude_code(client, config, system_prompt, user_prompt, replacements):
     user_prompt = "" + user_prompt
@@ -17,18 +18,35 @@ def run_claude_code(client, config, system_prompt, user_prompt, replacements):
                 response = client.messages.create(
                     model=config['llm']['model'],
                     max_tokens=config['llm']['max_tokens'],
+                    output_config={"effort": config['llm'].get('effort', 'medium')},
                     system=system_prompt,
                     messages=[
                         {"role": "user", "content": user_prompt}
                     ]
                 )
             got_response = True
+            usage.record(response)
         except Exception as e:
             attempt += 1
             delay = parallel.backoff_delay(attempt)
             print(f"Error in Claude API call: {e}. Retrying in {delay:.1f}s...")
             time.sleep(delay)
-    return response.content[0].text
+
+    # Models with extended thinking put a thinking block before the answer, so the
+    # text is not always the first block.
+    text = next((block.text for block in response.content if block.type == "text"), None)
+    if text is None:
+        raise RuntimeError(
+            f"No text block in Claude response (stop_reason={response.stop_reason}, "
+            f"blocks={[block.type for block in response.content]}). "
+            "Thinking tokens share the max_tokens budget; raise llm.max_tokens."
+        )
+    if response.stop_reason == "max_tokens":
+        print(
+            f"Warning: response hit max_tokens ({config['llm']['max_tokens']}), "
+            "the code is likely truncated. Raise llm.max_tokens."
+        )
+    return text
 
 class CAChromosome:
     def __init__(self, client, config, local_functions=None, global_functions=None, execution_function=None):

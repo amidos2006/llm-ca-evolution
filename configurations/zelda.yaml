@@ -18,7 +18,7 @@ evolution:
   fitness_runs: 30
   fitness_workers: 4
   seed: 42
-  generations: 100
+  generations: 50
   tournament: 3
   save_folder: "results/zelda"
   save_every: 10
@@ -35,6 +35,10 @@ llm:
   user_function_prompt: prompts/user_function_prompt.md
   user_execute_prompt: prompts/user_execute_prompt.md
   code_context: False
-  max_tokens: 1024
+  # Shared with extended thinking, which alone takes ~2.6-3.9k on the execute prompt.
+  max_tokens: 4096
+  # Thinking depth: low, medium, high, xhigh, max. The default sits near high; max
+  # can spend the whole budget on thinking and return no answer.
+  effort: low
   max_concurrency: 6
-  model: "claude-opus-4-8"
+  model: "claude-sonnet-5"
