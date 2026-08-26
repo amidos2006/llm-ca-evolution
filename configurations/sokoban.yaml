@@ -1,9 +1,9 @@
 environment:
-  name: "binary-v0"
-  description: "a 2D binary map without borders that is fully connected and has a long path inside of it of at least 28. The values in the map have the following meanings, 0: a solid tile, 1: an empty tile."
-  width: 14
-  height: 14
-  values: 2
+  name: "sokoban-v0"
+  description: "a 2D puzzle layout without borders where there is 1 player, at least 1 crate, and equal number of crates to targets. The goal of the game is the player to push all the crates over the targets. The layout should be fully connected and the level should be solvable in at least 10 moves. The values in the map have the following meanings, 0: a solid tile, 1: an empty tile, 2: a player tile, 3: a crate tile, 4: a target tile."
+  width: 5
+  height: 5
+  values: 5
   border:
     top: 0
     bottom: 0
@@ -20,26 +20,26 @@ evolution:
   seed: 42
   generations: 50
   tournament: 3
-  save_folder: "results/binary"
+  save_folder: "results/sokoban"
   save_every: 10
   save_images: True
 
 ca:
   steps: 10
-  local_functions: 8
+  local_functions: 1
   size: 3
-  global_functions: 4
+  global_functions: 0
   global_function_stateless: True
 
 llm:
   system_prompt: prompts/system_prompt.md
   user_function_prompt: prompts/user_function_prompt.md
   user_execute_prompt: prompts/user_execute_prompt.md
-  code_context: True
+  code_context: False
   # Shared with extended thinking, which alone takes ~2.6-3.9k on the execute prompt.
   max_tokens: 4096
   # Thinking depth: low, medium, high, xhigh, max. The default sits near high; max
   # can spend the whole budget on thinking and return no answer.
-  effort: medium
-  max_concurrency: 1
+  effort: low
+  max_concurrency: 6
   model: "claude-sonnet-5"
