@@ -229,8 +229,8 @@ class CAChromosome:
             )
             new_state = np.zeros_like(current_state)
             hybrid_state = current_state.copy()
-            global_parameters = [[]] * self.config['ca']['global_functions']
             if self.config['ca'].get('global_function_stateless', True):
+                global_parameters = [[]] * self.config['ca']['global_functions']
                 for tile in range(self.config['environment']['values']):
                     index = 0
                     global_observation = (hybrid_state == tile).astype(int)
@@ -242,7 +242,6 @@ class CAChromosome:
                         index += 1
             for y in range(shift, self.config['environment']['height'] + shift):
                 for x in range(shift, self.config['environment']['width'] + shift):
-                    local_parameters = [[]] * self.config['ca']['local_functions']
                     if not self.config['ca'].get('global_function_stateless', True):
                         global_parameters = [[]] * self.config['ca']['global_functions']
                         for tile in range(self.config['environment']['values']):
@@ -254,6 +253,8 @@ class CAChromosome:
                                 except Exception as e:
                                     return 1.0, None, -1
                                 index += 1
+                    
+                    local_parameters = [[]] * self.config['ca']['local_functions']
                     for tile in range(self.config['environment']['values']):
                         local_observation = padded_state[y - shift:y + shift + 1, x - shift:x + shift + 1]
                         local_observation = (local_observation == tile).astype(int)
