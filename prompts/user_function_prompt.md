@@ -1,1 +1,13 @@
-Write a python function for the cellular automata that is called #function_name#. The function is applied #function_type# for the cellular automata. The function should take a #width#x#height# numpy array of 0s and 1s that represents #function_representation# and return an integer value. The function can use numpy as np or any native python functions.#code_context##current_code##current_fitness#
+Write a Python function named `#function_name#`.
+
+The first line must be:
+def #function_name#(obs):
+
+This is a #function_type# function. `obs` is a #width#x#height# numpy array of 0s and 1s. It represents #function_representation#. Return a single integer feature value. Do not return a tile id.
+
+You may use numpy as np and native Python. Do not import anything. Do not print. Output only the function source. No markdown.
+
+#task_instruction#
+#code_context#
+#current_code#
+#current_fitness#

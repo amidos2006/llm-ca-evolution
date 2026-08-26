@@ -16,21 +16,29 @@ evolution:
   crossover_rate: 0.5
   mutation_rate: 0.1
   fitness_runs: 30
+  fitness_workers: 4
   seed: 42
-  generations: 100
+  generations: 50
   tournament: 3
   save_folder: "results/binary"
+  save_every: 10
+  save_images: True
 
 ca:
   steps: 10
-  local_functions: 2
+  local_functions: 8
   size: 3
-  global_functions: 1
+  global_functions: 4
 
 llm:
   system_prompt: prompts/system_prompt.md
   user_function_prompt: prompts/user_function_prompt.md
   user_execute_prompt: prompts/user_execute_prompt.md
   code_context: True
-  max_tokens: 1024
-  model: "claude-opus-4-8"
+  # Shared with extended thinking, which alone takes ~2.6-3.9k on the execute prompt.
+  max_tokens: 8000
+  # Thinking depth: low, medium, high, xhigh, max. The default sits near high; max
+  # can spend the whole budget on thinking and return no answer.
+  effort: medium
+  max_concurrency: 6
+  model: "claude-sonnet-5"
