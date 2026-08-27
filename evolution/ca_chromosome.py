@@ -229,7 +229,7 @@ class CAChromosome:
             )
             new_state = np.zeros_like(current_state)
             hybrid_state = current_state.copy()
-            if self.config['ca'].get('global_function_stateless', True):
+            if self.config['ca'].get('global_function_synchronous', True):
                 global_parameters = [[]] * self.config['ca']['global_functions']
                 for tile in range(self.config['environment']['values']):
                     index = 0
@@ -242,7 +242,7 @@ class CAChromosome:
                         index += 1
             for y in range(shift, self.config['environment']['height'] + shift):
                 for x in range(shift, self.config['environment']['width'] + shift):
-                    if not self.config['ca'].get('global_function_stateless', True):
+                    if not self.config['ca'].get('global_function_synchronous', True):
                         global_parameters = [[]] * self.config['ca']['global_functions']
                         for tile in range(self.config['environment']['values']):
                             index = 0

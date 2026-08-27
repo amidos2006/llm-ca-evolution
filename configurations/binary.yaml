@@ -29,7 +29,7 @@ ca:
   local_functions: 8
   size: 3
   global_functions: 4
-  global_function_stateless: True
+  global_function_synchronous: True
 
 llm:
   system_prompt: prompts/system_prompt.md
