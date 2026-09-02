@@ -42,4 +42,4 @@ llm:
   # can spend the whole budget on thinking and return no answer.
   effort: medium
   max_concurrency: 1
-  model: "claude-sonnet-5"
+  model: "claude-opus-4-8"

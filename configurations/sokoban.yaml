@@ -29,7 +29,7 @@ ca:
   local_functions: 1
   size: 3
   global_functions: 0
-  global_function_synchronous: True
+  global_function_synchronous: False
 
 llm:
   system_prompt: prompts/system_prompt.md
@@ -42,4 +42,4 @@ llm:
   # can spend the whole budget on thinking and return no answer.
   effort: low
   max_concurrency: 6
-  model: "claude-sonnet-5"
+  model: "claude-opus-4-8"

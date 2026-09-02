@@ -1,17 +1,18 @@
 # CLI flags override this file: uv run scripts/sweep.py --sweep-file scripts/my_sweep.yaml
 
 entity: munasir
-project: llm-ca-evolution-binary-real-sonnet
+project: llm-ca-evolution-zelda-opus-2-2
 
 # Omit configs to run every experiment YAML in configurations/
 configs:
-#  - configurations/zelda.yaml
-   - configurations/binary.yaml
+#  - configurations/sokoban.yaml
+  - configurations/zelda.yaml
+#   - configurations/binary.yaml
 
 seeds: [42, 7, 314, 1618, 812833]
 
 sweep:
-  ca.local_functions: [50]
-  ca.global_functions: [0, 1, 3]
-  ca.steps: [25]
+  ca.local_functions: [1, 5, 10, 50]
+  ca.global_functions: [0, 1, 5]
+  ca.steps: [100]
   llm.code_context: [true]
