@@ -1,12 +1,12 @@
 # CLI flags override this file: uv run scripts/sweep.py --sweep-file scripts/my_sweep.yaml
 
 entity: munasir
-project: llm-ca-evolution-zelda-opus-2-2
+project: llm-ca-evolution-sokoban-opus-2-2
 
 # Omit configs to run every experiment YAML in configurations/
 configs:
-#  - configurations/sokoban.yaml
-  - configurations/zelda.yaml
+  - configurations/sokoban.yaml
+#  - configurations/zelda.yaml
 #   - configurations/binary.yaml
 
 seeds: [42, 7, 314, 1618, 812833]

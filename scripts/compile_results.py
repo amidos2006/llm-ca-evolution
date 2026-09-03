@@ -24,6 +24,17 @@ HISTORY_SAMPLES = 2000
 HISTORY_WORKERS = 8
 PANEL_WIDTH = 5.2
 PANEL_HEIGHT = 4.0
+# Wong, Nature Methods 2011. Skip the yellow — it vanishes on white. First two (blue,
+# vermillion) stay separable in greyscale and for the common colour-vision deficiencies.
+SERIES_COLOURS = (
+    "#0072B2",
+    "#D55E00",
+    "#009E73",
+    "#CC79A7",
+    "#56B4E9",
+    "#E69F00",
+    "#332288",
+)
 # Two-sided 95% t critical values by degrees of freedom, so the bands stay honest at 2-5
 # seeds without pulling in scipy. Anything larger falls back to the normal 1.96.
 T_CRITICAL_95 = {
@@ -304,80 +315,193 @@ def axis_limits(curves):
     return low - padding, high + padding
 
 
-def plot_game(game, groups, metric, output_dir):
+def short_project_name(project):
+    prefix = "llm-ca-evolution-"
+    return project[len(prefix):] if project.startswith(prefix) else project
+
+
+def default_output_dir(projects):
+    export = PROJECT_ROOT / "results" / "wandb_export"
+    if len(projects) == 1:
+        return export / projects[0]
+    return export / ("compare_" + "__".join(short_project_name(project) for project in projects))
+
+
+def grouped_game_names(grouped):
+    return {key[0] for key in grouped}
+
+
+def comparison_labels(project_groups):
+    """Prefer the game name; disambiguate with the project when two series share a game."""
+    primary = []
+    for _project, grouped in project_groups:
+        names = grouped_game_names(grouped)
+        primary.append(next(iter(names)) if len(names) == 1 else None)
+    labels = []
+    for (project, _grouped), game in zip(project_groups, primary):
+        if game is not None and primary.count(game) == 1:
+            labels.append(game.capitalize())
+        elif game is not None:
+            labels.append(f"{game.capitalize()} ({short_project_name(project)})")
+        else:
+            labels.append(short_project_name(project))
+    return labels
+
+
+def records_for_cell(grouped, local, global_):
+    """All seeds for this (lf, gf), including distinct step budgets if a project ran more than one."""
+    records = []
+    for (_game, cell_local, cell_global, _steps), group in grouped.items():
+        if cell_local == local and cell_global == global_:
+            records.extend(group)
+    return records
+
+
+def series_colours(count):
+    if count <= len(SERIES_COLOURS):
+        return list(SERIES_COLOURS[:count])
+    import matplotlib
+    cmap = matplotlib.colormaps["tab10"]
+    return [cmap(index % 10) for index in range(count)]
+
+
+def style_panel(axes):
+    axes.spines["top"].set_visible(False)
+    axes.spines["right"].set_visible(False)
+    for spine in ("left", "bottom"):
+        axes.spines[spine].set_linewidth(0.8)
+        axes.spines[spine].set_color("0.25")
+    axes.tick_params(length=3.5, width=0.8, color="0.25", labelsize="large", pad=3)
+    axes.set_axisbelow(True)
+    axes.grid(True, axis="y", color="0.85", linewidth=0.8)
+    axes.grid(False, axis="x")
+
+
+def plot_montage(series, metric, output_dir, stem):
+    """Small multiples: one panel per (lf, gf), one coloured mean+CI line per series entry."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    curves = {}
-    for key, records in groups.items():
-        curve = aggregate_curves(records, metric)
-        if curve is not None:
-            curves[key] = curve
-    if not curves:
+    cells = set()
+    for item in series:
+        cells.update(item["curves"])
+    if not cells:
         return []
 
-    # Small multiples: a panel per (lf, gf) holds only the steps lines, so the whole
-    # figure needs one legend of a few entries instead of one entry per combination.
-    locals_ = sorted({key[1] for key in curves})
-    globals_ = sorted({key[2] for key in curves})
-    steps_values = sorted({key[3] for key in curves})
-    colours = plt.get_cmap("viridis")(np.linspace(0, 0.9, max(len(steps_values), 2)))
-    # Colour means the same thing in every panel.
-    step_colour = {steps: colours[index] for index, steps in enumerate(steps_values)}
-
+    locals_ = sorted({local for local, _global in cells})
+    globals_ = sorted({global_ for _local, global_ in cells})
+    colours = series_colours(len(series))
     label = metric.replace("_", " ")
     figure, grid = plt.subplots(
         len(locals_), len(globals_),
         figsize=(PANEL_WIDTH * len(globals_), PANEL_HEIGHT * len(locals_)),
         sharex=True, sharey=True, squeeze=False,
     )
+    figure.set_facecolor("white")
 
     for row, local in enumerate(locals_):
         for column, global_ in enumerate(globals_):
             axes = grid[row][column]
-            axes.set_title(f"lf={local}, gf={global_}", fontsize="x-large")
-            axes.tick_params(labelsize="x-large")
-            axes.grid(True, alpha=0.3)
+            axes.set_facecolor("white")
+            axes.set_title(f"lf = {local},  gf = {global_}", fontsize="large", pad=8, color="0.15")
+            style_panel(axes)
             drawn = 0
-            for steps in steps_values:
-                curve = curves.get((game, local, global_, steps))
+            # Bands first so overlapping CIs never paint over the mean lines.
+            for index, item in enumerate(series):
+                curve = item["curves"].get((local, global_))
                 if curve is None:
                     continue
                 generations, means, intervals = curve
-                colour = step_colour[steps]
-                axes.plot(generations, means, color=colour, linewidth=2.0, label=f"steps={steps}")
-                axes.fill_between(generations, means - intervals, means + intervals,
-                                  color=colour, alpha=0.18, linewidth=0)
+                axes.fill_between(
+                    generations, means - intervals, means + intervals,
+                    color=colours[index], alpha=0.18, linewidth=0, zorder=1,
+                )
                 drawn += 1
+            for index, item in enumerate(series):
+                curve = item["curves"].get((local, global_))
+                if curve is None:
+                    continue
+                generations, means, _intervals = curve
+                axes.plot(
+                    generations, means, color=colours[index], linewidth=2.4,
+                    solid_capstyle="round", zorder=2, label=item["label"],
+                )
             if drawn == 0:
                 axes.text(0.5, 0.5, "no runs", transform=axes.transAxes,
-                          ha="center", va="center", fontsize="large", alpha=0.5)
+                          ha="center", va="center", fontsize="large", color="0.5")
 
     # A single noisy band would otherwise stretch the shared axis and flatten every panel.
-    limits = axis_limits(curves.values())
+    all_curves = [curve for item in series for curve in item["curves"].values()]
+    limits = axis_limits(all_curves)
     if limits is not None:
         grid[0][0].set_ylim(*limits)
 
-    handles = [plt.Line2D([], [], color=step_colour[steps], linewidth=2.0, label=f"steps={steps}")
-               for steps in steps_values]
-    figure.supylabel(f"Mean {label}", fontsize="x-large")
-    #figure.suptitle(f"{game}: {label} per generation",
-    #                fontsize="xx-large")
+    handles = [
+        plt.Line2D([], [], color=colours[index], linewidth=2.4, label=item["label"],
+                   solid_capstyle="round")
+        for index, item in enumerate(series)
+    ]
+    figure.supylabel(f"Mean {label}", fontsize="x-large", color="0.15")
     # Reserve a strip at the bottom, then stack the x label and the legend inside it.
     # tight_layout does not lay out either one, so both get an explicit position.
-    figure.tight_layout(rect=(0, 0.06, 1, 1))
-    figure.supxlabel("Generation", y=0.038, fontsize="x-large")
-    figure.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 0.0),
-                  ncols=len(steps_values), frameon=False, fontsize="large")
+    figure.tight_layout(rect=(0.01, 0.07, 1, 0.995), h_pad=1.15, w_pad=0.7)
+    figure.supxlabel("Generation", y=0.042, fontsize="x-large", color="0.15")
+    figure.legend(
+        handles=handles, loc="lower center", bbox_to_anchor=(0.5, 0.0),
+        ncols=max(len(series), 1), frameon=False, fontsize="x-large",
+        handlelength=2.6, handletextpad=0.7, columnspacing=1.8,
+    )
 
     written = []
     for suffix in ("pdf", "png"):
-        path = output_dir / f"fitness_curves_{game}.{suffix}"
-        figure.savefig(path, bbox_inches="tight", dpi=150)
+        path = output_dir / f"{stem}.{suffix}"
+        figure.savefig(path, bbox_inches="tight", dpi=200, facecolor="white")
         written.append(path)
     plt.close(figure)
     return written
+
+
+def plot_game(game, groups, metric, output_dir):
+    # Small multiples: a panel per (lf, gf) holds only the steps lines, so the whole
+    # figure needs one legend of a few entries instead of one entry per combination.
+    by_steps = {}
+    for (_game, local, global_, steps), records in groups.items():
+        curve = aggregate_curves(records, metric)
+        if curve is None:
+            continue
+        by_steps.setdefault(steps, {})[(local, global_)] = curve
+    if not by_steps:
+        return []
+    series = [
+        {"label": f"steps={steps}", "curves": by_steps[steps]}
+        for steps in sorted(by_steps)
+    ]
+    return plot_montage(series, metric, output_dir, f"fitness_curves_{game}")
+
+
+def plot_projects(project_groups, metric, output_dir):
+    """Same lf×gf montage as plot_game, but one mean+CI line per project. Legend is the game name."""
+    labels = comparison_labels(project_groups)
+    cells = {
+        (local, global_)
+        for _project, grouped in project_groups
+        for (_game, local, global_, _steps) in grouped
+    }
+    series = []
+    for label, (_project, grouped) in zip(labels, project_groups):
+        curves = {}
+        for local, global_ in cells:
+            records = records_for_cell(grouped, local, global_)
+            if not records:
+                continue
+            curve = aggregate_curves(records, metric)
+            if curve is not None:
+                curves[(local, global_)] = curve
+        series.append({"label": label, "curves": curves})
+    if not any(item["curves"] for item in series):
+        return []
+    return plot_montage(series, metric, output_dir, "fitness_curves_compare")
 
 
 def scatter_points(groups):
@@ -444,16 +568,21 @@ def build_parser():
         description="Download W&B runs, group the seed repeats, and write a LaTeX table plus fitness plots.",
         epilog=(
             "Examples:\n"
-            "  uv run scripts/export_wandb_results.py --project llm-ca-evolution-sokoban-opus\n"
-            "  uv run scripts/export_wandb_results.py --project my-project --output-dir results/export"
+            "  uv run scripts/compile_results.py --project llm-ca-evolution-sokoban-opus\n"
+            "  uv run scripts/compile_results.py --project llm-ca-evolution-zelda-opus-2-2 llm-ca-evolution-binary-opus-2-1\n"
+            "  uv run scripts/compile_results.py --project my-project --output-dir results/export"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("-p", "--project", type=str, required=True, help="W&B project name")
+    parser.add_argument(
+        "-p", "--project", dest="projects", nargs="+", action="extend", required=True,
+        help="W&B project name(s). Pass two or more to also write a comparison montage.",
+    )
     parser.add_argument("-e", "--entity", type=str, default=DEFAULT_ENTITY, help=f"W&B entity. Default: {DEFAULT_ENTITY}")
     parser.add_argument(
         "-o", "--output-dir", type=str, default=None,
-        help="Where to write the table and figures. Default: results/wandb_export/<project>",
+        help="Where to write the table and figures. Default: results/wandb_export/<project>, "
+             "or results/wandb_export/compare_<projects> when comparing.",
     )
     parser.add_argument(
         "-m", "--metric", type=str, default="best_fitness",
@@ -474,13 +603,28 @@ if __name__ == "__main__":
     load_dotenv(PROJECT_ROOT / ".env")
     args = build_parser().parse_args()
 
-    output_dir = Path(args.output_dir) if args.output_dir else PROJECT_ROOT / "results" / "wandb_export" / args.project
+    output_dir = Path(args.output_dir) if args.output_dir else default_output_dir(args.projects)
     if not output_dir.is_absolute():
         output_dir = PROJECT_ROOT / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"W&B: {args.entity}/{args.project}")
-    records, skipped = collect_runs(args.entity, args.project, args.metric)
+    records, skipped = [], 0
+    project_groups = []
+    for project in args.projects:
+        print(f"W&B: {args.entity}/{project}")
+        project_records, project_skipped = collect_runs(args.entity, project, args.metric)
+        skipped += project_skipped
+        for record in project_records:
+            record["project"] = project
+        records.extend(project_records)
+        grouped_project = group_runs(project_records)
+        if grouped_project:
+            project_groups.append((project, grouped_project))
+        print(
+            f"  {len(project_records)} run(s) in {len(grouped_project)} configuration(s), "
+            f"{project_skipped} skipped"
+        )
+
     if not records:
         raise SystemExit(f"No usable runs found ({skipped} skipped)")
 
@@ -504,4 +648,8 @@ if __name__ == "__main__":
         for path in plot_game(game, groups, args.metric, output_dir):
             print(f"Plot: {path}")
         for path in plot_fitness_scatter(game, groups, args.metric, output_dir):
+            print(f"Plot: {path}")
+
+    if len(project_groups) >= 2:
+        for path in plot_projects(project_groups, args.metric, output_dir):
             print(f"Plot: {path}")
