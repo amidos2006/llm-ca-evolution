@@ -240,37 +240,40 @@ class CAChromosome:
                         except Exception as e:
                             return 1.0, None, -1
                         index += 1
-            for y in range(shift, self.config['environment']['height'] + shift):
-                for x in range(shift, self.config['environment']['width'] + shift):
-                    if not self.config['ca'].get('global_function_synchronous', True):
-                        global_parameters = [[]] * self.config['ca']['global_functions']
-                        for tile in range(self.config['environment']['values']):
-                            index = 0
-                            global_observation = (hybrid_state == tile).astype(int)
-                            for func in self.global_functions:
-                                try:
-                                    global_parameters[index].append(func(global_observation[:,:]))
-                                except Exception as e:
-                                    return 1.0, None, -1
-                                index += 1
-                    
-                    local_parameters = [[]] * self.config['ca']['local_functions']
+            locations = [(y, x) for y in range(shift, self.config['environment']['height'] + shift)
+                         for x in range(shift, self.config['environment']['width'] + shift)]
+            if self.config['ca'].get('random_sequence', False):
+                np.random.shuffle(locations)
+            for y, x in locations:
+                if not self.config['ca'].get('global_function_synchronous', True):
+                    global_parameters = [[]] * self.config['ca']['global_functions']
                     for tile in range(self.config['environment']['values']):
-                        local_observation = padded_state[y - shift:y + shift + 1, x - shift:x + shift + 1]
-                        local_observation = (local_observation == tile).astype(int)
                         index = 0
-                        for func in self.local_functions:
+                        global_observation = (hybrid_state == tile).astype(int)
+                        for func in self.global_functions:
                             try:
-                                local_parameters[index].append(func(local_observation[:,:]))
+                                global_parameters[index].append(func(global_observation[:,:]))
                             except Exception as e:
                                 return 1.0, None, -1
                             index += 1
-                    parameters = local_parameters + global_parameters
-                    try:
-                        new_state[y - shift, x - shift] = self.execute_function(*parameters)
-                        hybrid_state[y - shift, x - shift] = new_state[y - shift, x - shift]
-                    except Exception as e:
-                        return 1.0, None, -1
+                
+                local_parameters = [[]] * self.config['ca']['local_functions']
+                for tile in range(self.config['environment']['values']):
+                    local_observation = padded_state[y - shift:y + shift + 1, x - shift:x + shift + 1]
+                    local_observation = (local_observation == tile).astype(int)
+                    index = 0
+                    for func in self.local_functions:
+                        try:
+                            local_parameters[index].append(func(local_observation[:,:]))
+                        except Exception as e:
+                            return 1.0, None, -1
+                        index += 1
+                parameters = local_parameters + global_parameters
+                try:
+                    new_state[y - shift, x - shift] = self.execute_function(*parameters)
+                    hybrid_state[y - shift, x - shift] = new_state[y - shift, x - shift]
+                except Exception as e:
+                    return 1.0, None, -1
                         
             current_state = new_state
             q,_,_,_,_ = env.evaluate(current_state)
