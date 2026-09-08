@@ -19,7 +19,7 @@ from replay_chromosome import (
 )
 
 DEFAULT_ENTITY = "munasir"
-DEFAULT_REPLAY_RUNS = 30
+DEFAULT_REPLAY_RUNS = 100
 HISTORY_SAMPLES = 2000
 HISTORY_WORKERS = 8
 PANEL_WIDTH = 5.2
@@ -43,6 +43,9 @@ T_CRITICAL_95 = {
 }
 
 TABLE_HEADER = ["Game", "Local functions", "Global functions", "Best fitness", "Avg. iterations"]
+GAME_ORDER = ("binary", "zelda", "sokoban")
+LOCAL_ORDER = (1, 5, 10, 50)
+GLOBAL_ORDER = (0, 1, 5)
 
 
 def config_value(config, dotted_key):
@@ -188,38 +191,51 @@ def chromosomes_for_group(results_dir, key, seed_count):
     return chromosomes
 
 
-def iteration_average(chromosome_path, runs):
+def summary_has_eval_metrics(data):
+    return data.get("playability_percent") is not None and data.get("diversity_percent") is not None
+
+
+def load_replay_summary(chromosome_path, runs):
     cached = read_cached_summary(chromosome_path, runs)
-    if cached is not None:
-        return average_steps_from_summary(cached)
+    if cached is not None and summary_has_eval_metrics(cached):
+        return cached
     summary = measure_chromosome(chromosome_path, runs=runs)
-    write_summary(chromosome_path, summary, overwrite=False)
-    return average_steps_from_summary(summary)
+    write_summary(chromosome_path, summary, overwrite=True)
+    return summary
 
 
-def collect_iterations(grouped, results_dir, runs):
-    values = {}
+def collect_replay_stats(grouped, results_dir, runs):
+    stats = {}
     for key, records in grouped.items():
         chromosomes = chromosomes_for_group(results_dir, key, len(records))
+        empty = {"iterations": [], "playability": [], "diversity": []}
         if not chromosomes:
             print(f"No local chromosomes for {key[0]} lf={key[1]} gf={key[2]} steps={key[3]}")
-            values[key] = []
+            stats[key] = empty
             continue
-        averages = []
+        collected = {"iterations": [], "playability": [], "diversity": []}
         for chromosome in chromosomes:
             print(f"Replaying {chromosome} ({runs} generations, no montage)")
             try:
-                average = iteration_average(chromosome, runs)
+                summary = load_replay_summary(chromosome, runs)
             except Exception as error:
                 print(f"  failed: {error}")
                 continue
+            average = average_steps_from_summary(summary)
             if average is None:
                 print("  no successful generations")
                 continue
-            print(f"  average iterations: {average:.3f}")
-            averages.append(average)
-        values[key] = averages
-    return values
+            playability = float(summary["playability_percent"])
+            diversity = float(summary["diversity_percent"])
+            print(
+                f"  average iterations: {average:.3f}; "
+                f"playability: {playability:.1f}%; diversity: {diversity:.1f}%"
+            )
+            collected["iterations"].append(average)
+            collected["playability"].append(playability)
+            collected["diversity"].append(diversity)
+        stats[key] = collected
+    return stats
 
 
 def build_table(grouped, metric, iterations=None, replay_runs=DEFAULT_REPLAY_RUNS):
@@ -263,6 +279,96 @@ def build_table(grouped, metric, iterations=None, replay_runs=DEFAULT_REPLAY_RUN
         "  \\end{tabular}",
         f"  \\caption{{{caption}}}",
         "  \\label{tab:best-fitness}",
+        "\\end{table}",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def ordered_values(present, preferred):
+    present = set(present)
+    return [value for value in preferred if value in present] + [
+        value for value in sorted(present) if value not in preferred
+    ]
+
+
+def format_percent_cell(values):
+    if not values:
+        return ""
+    mean = float(np.mean(values))
+    interval = confidence_interval(values)
+    return f"${mean:.0f}\\% \\pm {interval:.0f}\\%$"
+
+
+def stats_for_cell(stats, game, local, global_, field):
+    values = []
+    for (cell_game, cell_local, cell_global, _steps), data in stats.items():
+        if cell_game == game and cell_local == local and cell_global == global_:
+            values.extend(data.get(field) or [])
+    return values
+
+
+def domain_phrase(stats):
+    count = len({key[0] for key in stats})
+    if count == 3:
+        return "all three game domains"
+    if count == 1:
+        return "the game domain"
+    return "all game domains"
+
+
+def build_grid_table(stats, field, caption, label):
+    games = ordered_values({key[0] for key in stats}, GAME_ORDER)
+    locals_ = ordered_values({key[1] for key in stats}, LOCAL_ORDER)
+    if not games or not locals_:
+        return ""
+
+    n_local = len(locals_)
+    last_column = 2 + n_local
+    spec = "|l|c|" + "c" * n_local + "|"
+    header_locals = " & ".join(str(value) for value in locals_)
+    lines = [
+        "% Requires \\usepackage{multirow} in the Overleaf preamble.",
+        "\\begin{table}",
+        "    \\centering",
+        f"    \\begin{{tabular}}{{{spec}}}",
+        f"        \\cline{{3-{last_column}}}",
+        f"        \\multicolumn{{2}}{{c|}}{{}} & \\multicolumn{{{n_local}}}{{c|}}{{\\# Local}} \\\\",
+        "        \\hline",
+        f"        Game & \\# Global & {header_locals} \\\\",
+        "        \\hline",
+        "        \\hline",
+    ]
+
+    present_games = [game for game in games if any(key[0] == game for key in stats)]
+    for game_index, game in enumerate(present_games):
+        globals_ = ordered_values(
+            {key[2] for key in stats if key[0] == game},
+            GLOBAL_ORDER,
+        )
+        display = game.capitalize()
+        for row_index, global_ in enumerate(globals_):
+            cells = [
+                format_percent_cell(stats_for_cell(stats, game, local, global_, field))
+                for local in locals_
+            ]
+            body = " & ".join(cells)
+            if row_index == 0:
+                lines.append(
+                    f"        \\multirow{{{len(globals_)}}}{{*}}{{{display}}} "
+                    f"& {global_} & {body} \\\\"
+                )
+            else:
+                lines.append(f"         & {global_} & {body} \\\\")
+        if game_index < len(present_games) - 1:
+            lines.extend(["        \\hline", "        \\hline"])
+        else:
+            lines.append("        \\hline")
+
+    lines.extend([
+        "    \\end{tabular}",
+        f"    \\caption{{{caption}}}",
+        f"    \\label{{{label}}}",
         "\\end{table}",
         "",
     ])
@@ -576,7 +682,8 @@ def build_parser():
     )
     parser.add_argument(
         "-p", "--project", dest="projects", nargs="+", action="extend", required=True,
-        help="W&B project name(s). Pass two or more to also write a comparison montage.",
+        help="W&B project name(s). Pass two or more to also write a comparison montage "
+             "and playability/diversity tables.",
     )
     parser.add_argument("-e", "--entity", type=str, default=DEFAULT_ENTITY, help=f"W&B entity. Default: {DEFAULT_ENTITY}")
     parser.add_argument(
@@ -634,7 +741,8 @@ if __name__ == "__main__":
     results_dir = Path(args.results_dir) if args.results_dir else PROJECT_ROOT / "results"
     if not results_dir.is_absolute():
         results_dir = PROJECT_ROOT / results_dir
-    iterations = collect_iterations(grouped, results_dir, args.replay_runs)
+    stats = collect_replay_stats(grouped, results_dir, args.replay_runs)
+    iterations = {key: data["iterations"] for key, data in stats.items()}
 
     table_path = output_dir / "fitness_table.tex"
     table_path.write_text(build_table(grouped, args.metric, iterations, args.replay_runs))
@@ -651,5 +759,23 @@ if __name__ == "__main__":
             print(f"Plot: {path}")
 
     if len(project_groups) >= 2:
+        domains = domain_phrase(stats)
+        playability_path = output_dir / "playability_table.tex"
+        playability_path.write_text(build_grid_table(
+            stats, "playability",
+            f"The playability percentage of our best generator over {args.replay_runs} sampled "
+            f"levels from each experiment with a 95\\% confidence interval for {domains}.",
+            "tab:playability",
+        ))
+        print(f"Table: {playability_path}")
+        diversity_path = output_dir / "diversity_table.tex"
+        diversity_path.write_text(build_grid_table(
+            stats, "diversity",
+            f"The diversity percentage (how many levels are different from each other) of our "
+            f"best generator over {args.replay_runs} sampled levels from each experiment with a "
+            f"95\\% confidence interval for {domains}.",
+            "tab:diversity",
+        ))
+        print(f"Table: {diversity_path}")
         for path in plot_projects(project_groups, args.metric, output_dir):
             print(f"Plot: {path}")

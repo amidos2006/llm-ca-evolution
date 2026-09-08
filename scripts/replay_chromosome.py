@@ -240,6 +240,7 @@ def measure_chromosome(chromosome_path, runs=DEFAULT_RUNS, seed=None, steps=None
     generations = []
     percents = []
     steps_used_list = []
+    levels = []
     completed_count = 0
     error_count = 0
     for index in range(runs):
@@ -271,8 +272,20 @@ def measure_chromosome(chromosome_path, runs=DEFAULT_RUNS, seed=None, steps=None
         })
         percents.append(percent)
         steps_used_list.append(used)
+        levels.append(level)
         completed_count += int(completed)
         generations.append(record)
+
+    # Batch evaluate: first value is playability (quality), second is diversity.
+    # Errors count as unplayable; diversity is only defined on successfully generated levels.
+    if levels:
+        quality_score, diversity_score, *_ = env.evaluate(levels)
+        quality_score = float(quality_score)
+        diversity_score = float(diversity_score)
+    else:
+        quality_score, diversity_score = 0.0, 0.0
+    playability_percent = 100.0 * completed_count / runs if runs else 0.0
+    diversity_percent = 100.0 * diversity_score
 
     return {
         "chromosome": str(chromosome_path),
@@ -285,6 +298,10 @@ def measure_chromosome(chromosome_path, runs=DEFAULT_RUNS, seed=None, steps=None
         "error_runs": error_count,
         "average_percent_steps": float(np.mean(percents)) if percents else None,
         "average_steps_used": float(np.mean(steps_used_list)) if steps_used_list else None,
+        "quality_score": quality_score,
+        "diversity_score": diversity_score,
+        "playability_percent": playability_percent,
+        "diversity_percent": diversity_percent,
         "generations": generations,
     }
 
