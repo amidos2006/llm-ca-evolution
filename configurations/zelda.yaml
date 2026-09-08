@@ -43,4 +43,4 @@ llm:
   # can spend the whole budget on thinking and return no answer.
   effort: low
   max_concurrency: 6
-  model: "claude-sonnet-5"
+  model: "claude-opus-4-8"
