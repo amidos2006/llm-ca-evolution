@@ -25,6 +25,8 @@ GRID_COLUMNS = 6
 MONTAGE_SCALE = 2
 LABEL_HEIGHT = 22
 CELL_PADDING = 6
+GIF_FRAME_MS = 150
+GIF_FINAL_FRAME_MS = 1000
 
 
 def load_yaml(path):
@@ -306,12 +308,6 @@ def measure_chromosome(chromosome_path, runs=DEFAULT_RUNS, seed=None, steps=None
     }
 
 
-def render_level(env, level, path):
-    image = env.render(level)
-    image.save(path)
-    return image
-
-
 def font():
     for name in ("DejaVuSans.ttf", "LiberationSans-Regular.ttf"):
         try:
@@ -361,6 +357,56 @@ def save_montage(records, output_dir, tile_size):
     return png_path, pdf_path
 
 
+def save_montage_gif(records, output_dir, tile_size, reveal="staggered"):
+    """Animated montage: tiles animate their CA one step per frame starting
+    from the initial noise state. A run that finishes early freezes on its
+    final level until every run is done. reveal="staggered" shows tiles one
+    run per frame; reveal="together" starts all tiles on frame 0."""
+    frame_lists = [record.get("frames") or [] for record in records]
+    if not any(frame_lists):
+        return None
+    if reveal == "together":
+        reveal_at = [0] * len(records)
+    else:
+        reveal_at = list(range(len(records)))
+    total_frames = max(
+        reveal + len(frames) for reveal, frames in zip(reveal_at, frame_lists)
+    )
+    columns = min(GRID_COLUMNS, len(records))
+    rows = math.ceil(len(records) / columns)
+    cell_w = tile_size[0] * MONTAGE_SCALE
+    cell_h = tile_size[1] * MONTAGE_SCALE
+    page_w = columns * (cell_w + CELL_PADDING) + CELL_PADDING
+    page_h = rows * (cell_h + LABEL_HEIGHT + CELL_PADDING) + CELL_PADDING
+    placeholder = Image.new("RGB", (cell_w, cell_h), (40, 40, 40))
+    green = (120, 200, 120)
+    pages = []
+    for frame_index in range(total_frames):
+        page = Image.new("RGB", (page_w, page_h), (8, 8, 8))
+        for index, record in enumerate(records):
+            frames = frame_lists[index]
+            if frame_index < reveal_at[index]:
+                tile = labeled_tile(placeholder, f"#{index:02d}", cell_w, cell_h, (90, 90, 90))
+            elif record["error"] or not frames:
+                tile = labeled_tile(placeholder, f"#{index:02d} error", cell_w, cell_h, (220, 80, 80))
+            else:
+                step_index = min(frame_index - reveal_at[index], len(frames) - 1)
+                label = f"#{index:02d} iter {step_index}/{len(frames) - 1}"
+                tile = labeled_tile(frames[step_index], label, cell_w, cell_h, green)
+            row, col = divmod(index, columns)
+            x = CELL_PADDING + col * (cell_w + CELL_PADDING)
+            y = CELL_PADDING + row * (cell_h + LABEL_HEIGHT + CELL_PADDING)
+            page.paste(tile, (x, y))
+        pages.append(page)
+    gif_path = output_dir / "montage.gif"
+    durations = [GIF_FRAME_MS] * (len(pages) - 1) + [GIF_FINAL_FRAME_MS]
+    pages[0].save(
+        gif_path, save_all=True, append_images=pages[1:],
+        duration=durations, loop=0,
+    )
+    return gif_path
+
+
 def default_output_dir(chromosome_path):
     return chromosome_path.parent / f"{chromosome_path.stem}_replay"
 
@@ -396,6 +442,10 @@ def build_parser():
     parser.add_argument(
         "--seed", type=int, default=None,
         help="Seed for env.content_space. Default: evolution.seed from the config.",
+    )
+    parser.add_argument(
+        "--gif-reveal", choices=("staggered", "together"), default="staggered",
+        help="GIF tile reveal: one run per frame (staggered, default) or all runs animating from frame 0 (together).",
     )
     return parser
 
@@ -435,7 +485,8 @@ if __name__ == "__main__":
     percents = []
     tile_size = None
     for index in range(args.runs):
-        errors, level, step_fraction = chromosome.execute(env)
+        states = []
+        errors, level, step_fraction = chromosome.execute(env, trace=states)
         record = {
             "run": index,
             "error": False,
@@ -446,6 +497,7 @@ if __name__ == "__main__":
             "step_fraction": None,
             "percent": None,
             "image_path": None,
+            "frames": [],
         }
         if errors > 0.0 or level is None or step_fraction is None or step_fraction < 0:
             record["error"] = True
@@ -458,11 +510,15 @@ if __name__ == "__main__":
         completed = bool(quality >= 1.0)
         image_path = images_dir / f"generation_{index:02d}.png"
         image = None
+        frames = []
         try:
-            image = render_level(env, level, image_path)
-            if tile_size is None:
-                tile_size = image.size
-            record["image_path"] = str(image_path.relative_to(output_dir))
+            frames = [env.render(state) for state in states]
+            image = frames[-1] if frames else None
+            if image is not None:
+                image.save(image_path)
+                if tile_size is None:
+                    tile_size = image.size
+                record["image_path"] = str(image_path.relative_to(output_dir))
         except Exception as error:
             print(f"[{index:02d}] render failed: {error}")
 
@@ -473,6 +529,7 @@ if __name__ == "__main__":
             "step_fraction": float(step_fraction),
             "percent": percent,
             "image": image,
+            "frames": frames,
         })
         percents.append(percent)
         status = "complete" if completed else "incomplete"
@@ -499,7 +556,7 @@ if __name__ == "__main__":
             record["steps_used"] for record in records if record["steps_used"] is not None
         ])) if any(record["steps_used"] is not None for record in records) else None,
         "generations": [
-            {key: value for key, value in record.items() if key != "image"}
+            {key: value for key, value in record.items() if key not in ("image", "frames")}
             for record in records
         ],
     }
@@ -507,9 +564,10 @@ if __name__ == "__main__":
     with open(summary_path, "w") as file:
         json.dump(summary, file, indent=2)
 
-    montage_png, montage_pdf = None, None
+    montage_png, montage_pdf, montage_gif = None, None, None
     if tile_size is not None:
         montage_png, montage_pdf = save_montage(records, output_dir, tile_size)
+        montage_gif = save_montage_gif(records, output_dir, tile_size, reveal=args.gif_reveal)
 
     print()
     if average is None:
@@ -526,4 +584,6 @@ if __name__ == "__main__":
     if montage_png is not None:
         print(f"Montage: {montage_png}")
         print(f"Montage PDF: {montage_pdf}")
+    if montage_gif is not None:
+        print(f"Montage GIF: {montage_gif}")
     print(f"Summary: {summary_path}")
