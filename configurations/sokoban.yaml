@@ -29,7 +29,8 @@ ca:
   local_functions: 1
   size: 3
   global_functions: 0
-  global_function_synchronous: False
+  global_function_synchronous: True
+  random_sequence: True
 
 llm:
   system_prompt: prompts/system_prompt.md
