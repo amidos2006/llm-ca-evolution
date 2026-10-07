@@ -33,9 +33,9 @@ ca:
   random_sequence: True
 
 llm:
-  system_prompt: prompts/system_prompt.md
-  user_function_prompt: prompts/user_function_prompt.md
-  user_execute_prompt: prompts/user_execute_prompt.md
+  system_prompt: prompts/modular/system_prompt.md
+  user_function_prompt: prompts/modular/user_function_prompt.md
+  user_execute_prompt: prompts/modular/user_execute_prompt.md
   code_context: True
   # Shared with extended thinking, which alone takes ~2.6-3.9k on the execute prompt.
   max_tokens: 4096
