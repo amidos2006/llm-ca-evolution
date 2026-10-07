@@ -1,8 +1,10 @@
 import anthropic
 import pcg_benchmark
-from .mod_ca_chromosome import ModCAChromosome, evaluate_chromosome
+from .mod_ca_chromosome import ModCAChromosome
+from .chromosome_utils import evaluate_chromosome
 from . import parallel
 from datetime import datetime
+from functools import partial
 from tqdm import trange
 import numpy as np 
 import os
@@ -45,7 +47,9 @@ class GeneticAlgorithm:
     def evaluate_population(self):
         # Scoring a chromosome is pure CPU work, so hand the unscored ones to worker processes.
         pending = [chromosome for chromosome in self.population if chromosome.fitness_value is None]
-        values = parallel.run_processes(evaluate_chromosome, [chromosome.payload() for chromosome in pending])
+        values = parallel.run_processes(
+            partial(evaluate_chromosome, ModCAChromosome), [chromosome.payload() for chromosome in pending]
+        )
         for chromosome, value in zip(pending, values):
             chromosome.fitness_value = value
 
