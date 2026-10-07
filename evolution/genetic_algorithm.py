@@ -2,6 +2,7 @@ import anthropic
 import pcg_benchmark
 from .mod_ca_chromosome import ModCAChromosome
 from .ca_chromosome import CAChromosome
+from .oneshot_chromosome import OneShotChromosome
 from .chromosome_utils import evaluate_chromosome
 from . import parallel
 from datetime import datetime
@@ -16,6 +17,7 @@ SEED_LIMIT = 2 ** 31 - 1
 CHROMOSOME_CLASSES = {
     "ModCAChromosome": ModCAChromosome,
     "CAChromosome": CAChromosome,
+    "OneShotChromosome": OneShotChromosome,
 }
 
 def chromosome_class(config):
@@ -136,7 +138,8 @@ class GeneticAlgorithm:
         modular = self.chromosome_class is ModCAChromosome
         lf = self.config['ca']['local_functions'] if modular else 0
         gf = self.config['ca']['global_functions'] if modular else 0
-        steps = self.config['ca']['steps']
+        # One-shot generation has no CA section and no steps.
+        steps = self.config['ca']['steps'] if 'ca' in self.config else 0
         cc = str(self.config['llm']['code_context']).lower()
         name = f"{game}_{timestamp}_lf-{lf}_gf-{gf}_steps-{steps}_cc-{cc}"
         return os.path.join(parent, name)

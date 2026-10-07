@@ -1,0 +1,39 @@
+environment:
+  name: "binary-v0"
+  description: "a 2D binary map without borders that is fully connected and has a long path inside of it of at least 28. The values in the map have the following meanings, 0: a solid tile, 1: an empty tile."
+  width: 14
+  height: 14
+  values: 2
+  border:
+    top: 0
+    bottom: 0
+    left: 0
+    right: 0
+
+evolution:
+  population: 10
+  chromosome: OneShotChromosome
+  elitism: 0.1
+  crossover_rate: 0.5
+  mutation_rate: 0.1
+  fitness_runs: 30
+  fitness_workers: 4
+  seed: 42
+  generations: 50
+  tournament: 3
+  save_folder: "results/binary"
+  save_every: 10
+  save_images: True
+
+llm:
+  system_prompt: prompts/oneshot/system_prompt.md
+  user_execute_prompt: prompts/oneshot/user_execute_prompt.md
+  user_crossover_prompt: prompts/oneshot/user_crossover_prompt.md
+  code_context: True
+  # Shared with extended thinking, which alone takes ~2.6-3.9k on the execute prompt.
+  max_tokens: 4096
+  # Thinking depth: low, medium, high, xhigh, max. The default sits near high; max
+  # can spend the whole budget on thinking and return no answer.
+  effort: medium
+  max_concurrency: 1
+  model: "claude-opus-4-8"
