@@ -48,7 +48,7 @@ def run_claude_code(client, config, system_prompt, user_prompt, replacements):
         )
     return text
 
-class CAChromosome:
+class ModCAChromosome:
     def __init__(self, client, config, local_functions=None, global_functions=None, execution_function=None):
         self.client = client
         self.config = config
@@ -307,7 +307,7 @@ class CAChromosome:
         return self.fitness_value
 
     def mutate(self, rng):
-        child = CAChromosome(self.client, self.config, self.local_string, self.global_string, self.execute_string)
+        child = ModCAChromosome(self.client, self.config, self.local_string, self.global_string, self.execute_string)
         # Draw every decision first, then rewrite the picked functions in parallel.
         local_indices = [i for i in range(self.config['ca']['local_functions'])
                          if rng.rand() < self.config['evolution']['mutation_rate']]
@@ -326,7 +326,7 @@ class CAChromosome:
         return child
 
     def crossover(self, other, rng):
-        child = CAChromosome(self.client, self.config, self.local_string, self.global_string, self.execute_string)
+        child = ModCAChromosome(self.client, self.config, self.local_string, self.global_string, self.execute_string)
         for i in range(self.config['ca']['local_functions']):
             if rng.rand() < self.config['evolution']['crossover_rate']:
                 child.local_string[i] = other.local_string[i]
@@ -391,5 +391,5 @@ def worker_env(config):
 def evaluate_chromosome(payload):
     # Entry point for a worker process: rebuild the chromosome from code and return its fitness.
     config, local_string, global_string, execute_string = payload
-    chromosome = CAChromosome(None, config, local_string, global_string, execute_string)
+    chromosome = ModCAChromosome(None, config, local_string, global_string, execute_string)
     return chromosome.fitness(worker_env(config))

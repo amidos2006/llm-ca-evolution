@@ -1,6 +1,6 @@
 import anthropic
 import pcg_benchmark
-from .ca_chromosome import CAChromosome, evaluate_chromosome
+from .mod_ca_chromosome import ModCAChromosome, evaluate_chromosome
 from . import parallel
 from datetime import datetime
 from tqdm import trange
@@ -35,7 +35,7 @@ class GeneticAlgorithm:
 
         # Every chromosome is an independent batch of API calls.
         self.population = parallel.run_parallel(
-            lambda _: CAChromosome(self.claude_client, self.config),
+            lambda _: ModCAChromosome(self.claude_client, self.config),
             range(self.config['evolution']['population']),
         )
         self.evaluate_population()
