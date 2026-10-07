@@ -8,6 +8,8 @@ class CAChromosome:
         self.config = config
         self.fitness_value = None
         self.compiled = False
+        # ca.global switches execute between (local_observation) and (local_observation, global_observation).
+        self.uses_global = self.config['ca'].get('global', True)
 
         with open(f"{self.config['llm']['system_prompt']}", "r") as f:
             self.system_prompt = f.read()
@@ -20,6 +22,10 @@ class CAChromosome:
             self.system_prompt = self.system_prompt.replace("#size#", str(self.config['ca']['size']))
             self.system_prompt = self.system_prompt.replace("#center#", str(self.config['ca']['size'] // 2))
             self.system_prompt = self.system_prompt.replace("#update_order#", self._update_order())
+            self.system_prompt = self.system_prompt.replace("#parameter_names#", self._parameter_names())
+            self.system_prompt = self.system_prompt.replace("#global_contract#", (
+                f"\n- `global_observation` is a `{self.config['environment']['height']}`x`{self.config['environment']['width']}` "
+                "numpy array of tile ids for the whole map." if self.uses_global else ""))
 
         with open(f"{self.config['llm']['user_execute_prompt']}", "r") as f:
             self.user_execute_prompt = f.read()
@@ -35,11 +41,17 @@ class CAChromosome:
 
     def _update_order(self):
         order = "in a random order" if self.config['ca'].get('random_sequence', False) else "row by row"
+        if not self.uses_global:
+            return (f"Cells are visited {order}. `local_observation` shows the map as it was at the start of the step, "
+                    "so all cells update at the same time.")
         if self.config['ca'].get('global_function_synchronous', True):
             return (f"Cells are visited {order}. Both observations show the map as it was at the start of the step, "
                     "so all cells update at the same time.")
         return (f"Cells are visited {order}. `local_observation` shows the map at the start of the step, while "
                 "`global_observation` already includes the cells updated earlier in this step.")
+
+    def _parameter_names(self):
+        return "local_observation, global_observation" if self.uses_global else "local_observation"
 
     def _fitness_meaning(self, value):
         if value <= -100:
@@ -73,6 +85,10 @@ class CAChromosome:
             "#width#": str(self.config['environment']['width']),
             "#height#": str(self.config['environment']['height']),
             "#values#": str(self.config['environment']['values']),
+            "#parameter_names#": self._parameter_names(),
+            "#global_description#": (
+                f" `global_observation` is a {self.config['environment']['height']}x{self.config['environment']['width']} "
+                "numpy array of tile ids for the whole map." if self.uses_global else ""),
         }
 
     def get_execute_function(self, initialization):
@@ -136,9 +152,12 @@ class CAChromosome:
             for y, x in locations:
                 # Copies, so the evolved code cannot write into the automaton state.
                 local_observation = padded_state[y - shift:y + shift + 1, x - shift:x + shift + 1].copy()
-                global_observation = (current_state if synchronous else hybrid_state).copy()
                 try:
-                    new_state[y - shift, x - shift] = self.execute_function(local_observation, global_observation)
+                    if self.uses_global:
+                        global_observation = (current_state if synchronous else hybrid_state).copy()
+                        new_state[y - shift, x - shift] = self.execute_function(local_observation, global_observation)
+                    else:
+                        new_state[y - shift, x - shift] = self.execute_function(local_observation)
                     hybrid_state[y - shift, x - shift] = new_state[y - shift, x - shift]
                 except Exception as e:
                     return 1.0, None, -1

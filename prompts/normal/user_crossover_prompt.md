@@ -1,9 +1,9 @@
 Combine two parent versions of the execute function into one child execute function.
 
 The first line must be:
-def execute(local_observation, global_observation):
+def execute(#parameter_names#):
 
-`local_observation` is a #size#x#size# numpy array of tile ids centered on the cell. `global_observation` is a #height#x#width# numpy array of tile ids for the whole map.
+`local_observation` is a #size#x#size# numpy array of tile ids centered on the cell.#global_description#
 Return a single integer tile id in `{0, ..., #values#-1}`.
 
 PARENT A:

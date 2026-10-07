@@ -8,9 +8,8 @@ The map starts as a random grid of `#height#` rows by `#width#` columns. Each ce
 Each step, `execute` is called once for every cell and returns the next tile id for that cell. #update_order#
 
 ## Function contract
-- `def execute(local_observation, global_observation):`
-- `local_observation` is a `#size#`x`#size#` numpy array of tile ids centered on the cell; the cell itself is `local_observation[#center#, #center#]`. Outside the map, the array holds border tiles.
-- `global_observation` is a `#height#`x`#width#` numpy array of tile ids for the whole map.
+- `def execute(#parameter_names#):`
+- `local_observation` is a `#size#`x`#size#` numpy array of tile ids centered on the cell; the cell itself is `local_observation[#center#, #center#]`. Outside the map, the array holds border tiles.#global_contract#
 - Return a single tile id in `{0, ..., #values#-1}`.
 
 You may use `numpy` as `np` and native Python. The first line of your output must be the `def` line.

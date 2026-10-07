@@ -28,6 +28,7 @@ evolution:
 ca:
   steps: 100
   size: 3
+  global: True
   global_function_synchronous: True
   random_sequence: True
 
