@@ -1,6 +1,7 @@
 import anthropic
 import pcg_benchmark
 from .mod_ca_chromosome import ModCAChromosome
+from .ca_chromosome import CAChromosome
 from .chromosome_utils import evaluate_chromosome
 from . import parallel
 from datetime import datetime
@@ -11,6 +12,18 @@ import os
 from utils import usage
 
 SEED_LIMIT = 2 ** 31 - 1
+# Names accepted by evolution.chromosome in the config.
+CHROMOSOME_CLASSES = {
+    "ModCAChromosome": ModCAChromosome,
+    "CAChromosome": CAChromosome,
+}
+
+def chromosome_class(config):
+    # Configs from before the setting existed are all modular.
+    name = config['evolution'].get('chromosome', 'ModCAChromosome')
+    if name not in CHROMOSOME_CLASSES:
+        raise ValueError(f"Unknown evolution.chromosome '{name}', expected one of {list(CHROMOSOME_CLASSES)}")
+    return CHROMOSOME_CLASSES[name]
 
 def breed(recipe):
     # Runs on a worker thread, so it gets its own generator instead of the global one.
@@ -22,6 +35,7 @@ def breed(recipe):
 class GeneticAlgorithm:
     def __init__(self, config):
         self.config = config
+        self.chromosome_class = chromosome_class(self.config)
         np.random.seed(int(self.config['evolution']['seed']))
         parallel.configure(
             self.config['llm'].get('max_concurrency', parallel.DEFAULT_LIMIT),
@@ -37,7 +51,7 @@ class GeneticAlgorithm:
 
         # Every chromosome is an independent batch of API calls.
         self.population = parallel.run_parallel(
-            lambda _: ModCAChromosome(self.claude_client, self.config),
+            lambda _: self.chromosome_class(self.claude_client, self.config),
             range(self.config['evolution']['population']),
         )
         self.evaluate_population()
@@ -48,7 +62,7 @@ class GeneticAlgorithm:
         # Scoring a chromosome is pure CPU work, so hand the unscored ones to worker processes.
         pending = [chromosome for chromosome in self.population if chromosome.fitness_value is None]
         values = parallel.run_processes(
-            partial(evaluate_chromosome, ModCAChromosome), [chromosome.payload() for chromosome in pending]
+            partial(evaluate_chromosome, self.chromosome_class), [chromosome.payload() for chromosome in pending]
         )
         for chromosome, value in zip(pending, values):
             chromosome.fitness_value = value
@@ -118,8 +132,10 @@ class GeneticAlgorithm:
         env_name = str(self.config['environment']['name'])
         game = env_name.rsplit("-", 1)[0] if "-" in env_name else env_name
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        lf = self.config['ca']['local_functions']
-        gf = self.config['ca']['global_functions']
+        # Only the modular CA has helper functions; the plain CA has just execute.
+        modular = self.chromosome_class is ModCAChromosome
+        lf = self.config['ca']['local_functions'] if modular else 0
+        gf = self.config['ca']['global_functions'] if modular else 0
         steps = self.config['ca']['steps']
         cc = str(self.config['llm']['code_context']).lower()
         name = f"{game}_{timestamp}_lf-{lf}_gf-{gf}_steps-{steps}_cc-{cc}"

@@ -1,0 +1,47 @@
+environment:
+  name: "zelda-v0"
+  description: "a 2D dungeon crawler layout without borders where there is 1 player, 1 key, 1 door, and 3 enemies. The layout should be fully connected and distance between player to key added to the distance between key to door is at least 18 steps. The values in the map have the following meanings, 0: a solid tile, 1: an empty tile, 2: a player tile, 3: a key tile, 4: a door tile, 5: an enemy tile."
+  width: 11
+  height: 7
+  values: 6
+  border:
+    top: 0
+    bottom: 0
+    left: 0
+    right: 0
+
+evolution:
+  population: 10
+  chromosome: ModCAChromosome
+  elitism: 0.1
+  crossover_rate: 0.5
+  mutation_rate: 0.1
+  fitness_runs: 30
+  fitness_workers: 4
+  seed: 42
+  generations: 50
+  tournament: 3
+  save_folder: "results/zelda"
+  save_every: 10
+  save_images: True
+
+ca:
+  steps: 100
+  local_functions: 1
+  size: 3
+  global_functions: 0
+  global_function_synchronous: True
+  random_sequence: True
+
+llm:
+  system_prompt: prompts/modular/system_prompt.md
+  user_function_prompt: prompts/modular/user_function_prompt.md
+  user_execute_prompt: prompts/modular/user_execute_prompt.md
+  code_context: False
+  # Shared with extended thinking, which alone takes ~2.6-3.9k on the execute prompt.
+  max_tokens: 4096
+  # Thinking depth: low, medium, high, xhigh, max. The default sits near high; max
+  # can spend the whole budget on thinking and return no answer.
+  effort: low
+  max_concurrency: 6
+  model: "claude-opus-4-8"

@@ -87,7 +87,7 @@ def infer_run_settings(chromosome_path):
 
 
 def default_config_path(game):
-    path = PROJECT_ROOT / "configurations" / f"{game}.yaml"
+    path = PROJECT_ROOT / "configurations" / "modular" / f"{game}.yaml"
     if path.exists():
         return path
     return None
@@ -109,7 +109,7 @@ def build_config(chromosome_data, chromosome_path, config_path=None, steps=None)
         config_path = default_config_path(inferred["game"])
         if config_path is None:
             raise RuntimeError(
-                f"No configurations/{inferred['game']}.yaml for run folder {inferred['run_dir'].name}"
+                f"No configurations/modular/{inferred['game']}.yaml for run folder {inferred['run_dir'].name}"
             )
     else:
         raise RuntimeError(
