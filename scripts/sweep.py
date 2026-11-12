@@ -13,7 +13,7 @@ from utils import usage
 
 DEFAULT_ENTITY = "munasir"
 DEFAULT_PROJECT = "llm-ca-evolution"
-CONFIG_DIR = PROJECT_ROOT / "configurations"
+CONFIG_DIR = PROJECT_ROOT / "configurations" / "modular"
 
 
 def flatten_keys(data, prefix=""):
@@ -258,7 +258,7 @@ def build_parser():
             "Examples:\n"
             "  uv run scripts/sweep.py --seeds 42,7\n"
             "  uv run scripts/sweep.py --seeds 1,2,3 --sweep ca.local_functions=1,4,8 --sweep llm.code_context=true,false\n"
-            "  uv run scripts/sweep.py --configs configurations/binary.yaml --seeds 42 --sweep ca.global_functions=0,4\n"
+            "  uv run scripts/sweep.py --configs configurations/modular/binary.yaml --seeds 42 --sweep ca.global_functions=0,4\n"
             "  uv run scripts/sweep.py --sweep-file scripts/my_sweep.yaml\n"
             "  uv run scripts/sweep.py --sweep-file scripts/my_sweep.yaml --shard 2/4\n"
             "  uv run scripts/sweep.py --list-keys"
@@ -267,7 +267,7 @@ def build_parser():
     )
     parser.add_argument(
         "-c", "--configs", nargs="*", default=None,
-        help="Config YAML files or directories. Default: all experiment configs in configurations/",
+        help="Config YAML files or directories. Default: all experiment configs in configurations/modular/",
     )
     parser.add_argument(
         "-s", "--sweep", action="append", default=[],

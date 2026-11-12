@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from evolution.ca_chromosome import CAChromosome
+from evolution.mod_ca_chromosome import ModCAChromosome
 
 RUN_DIR_RE = re.compile(
     r"^(?P<game>.+)_\d{8}-\d{6}_lf-(?P<lf>\d+)_gf-(?P<gf>\d+)_"
@@ -89,7 +89,7 @@ def infer_run_settings(chromosome_path):
 
 
 def default_config_path(game):
-    path = PROJECT_ROOT / "configurations" / f"{game}.yaml"
+    path = PROJECT_ROOT / "configurations" / "modular" / f"{game}.yaml"
     if path.exists():
         return path
     return None
@@ -111,7 +111,7 @@ def build_config(chromosome_data, chromosome_path, config_path=None, steps=None)
         config_path = default_config_path(inferred["game"])
         if config_path is None:
             raise RuntimeError(
-                f"No configurations/{inferred['game']}.yaml for run folder {inferred['run_dir'].name}"
+                f"No configurations/modular/{inferred['game']}.yaml for run folder {inferred['run_dir'].name}"
             )
     else:
         raise RuntimeError(
@@ -153,7 +153,7 @@ def build_config(chromosome_data, chromosome_path, config_path=None, steps=None)
 
 
 def load_chromosome(config, chromosome_data):
-    chromosome = CAChromosome(
+    chromosome = ModCAChromosome(
         None,
         config,
         local_functions=chromosome_data.get("local_functions") or [],

@@ -9,7 +9,7 @@ The run take a config file to run stuff. The config file has 3 different things 
 You need ANTHROPIC API KEY before running
 
 ```bash
-uv run scripts/run.py -c configurations/binary.yaml
+uv run scripts/run.py -c configurations/modular/binary.yaml
 ```
 
 ## To sweep

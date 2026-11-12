@@ -12,6 +12,7 @@ environment:
 
 evolution:
   population: 10
+  chromosome: ModCAChromosome
   elitism: 0.1
   crossover_rate: 0.5
   mutation_rate: 0.1
@@ -25,7 +26,7 @@ evolution:
   save_images: True
 
 ca:
-  steps: 10
+  steps: 100
   local_functions: 1
   size: 3
   global_functions: 0
@@ -33,9 +34,9 @@ ca:
   random_sequence: True
 
 llm:
-  system_prompt: prompts/system_prompt.md
-  user_function_prompt: prompts/user_function_prompt.md
-  user_execute_prompt: prompts/user_execute_prompt.md
+  system_prompt: prompts/modular/system_prompt.md
+  user_function_prompt: prompts/modular/user_function_prompt.md
+  user_execute_prompt: prompts/modular/user_execute_prompt.md
   code_context: False
   # Shared with extended thinking, which alone takes ~2.6-3.9k on the execute prompt.
   max_tokens: 4096
